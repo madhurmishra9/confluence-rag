@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
  
 # Configuration from environment
 CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./confluence_db")
+STACKOVERFLOW_DB_PATH = os.getenv("STACKOVERFLOW_DB_PATH", "./stackoverflow_db")
 OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "500"))
@@ -179,33 +180,292 @@ def load_vectorstore() -> Chroma:
         raise
  
  
-def vectorstore_exists() -> bool:
+def add_documents(documents: List[Document], vectorstore: Chroma = None) -> Chroma:
     """
-    Check if a ChromaDB vector store already exists.
+    Add new documents to an existing vector store (incremental update).
    
+    Args:
+        documents: List of new documents to add
+        vectorstore: Optional existing Chroma vectorstore. If None, loads existing one.
+       
     Returns:
-        True if vector store exists and has documents, False otherwise.
+        Updated Chroma vector store instance
+    """
+    if not documents:
+        logger.warning("No documents to add.")
+        return vectorstore if vectorstore else load_vectorstore()
+    
+    if vectorstore is None:
+        vectorstore = load_vectorstore()
+    
+    logger.info(f"Adding {len(documents)} new documents to vector store...")
+    
+    # Chunk documents
+    chunks = chunk_documents(documents)
+    
+    if not chunks:
+        logger.warning("No chunks generated from documents.")
+        return vectorstore
+    
+    try:
+        # Add chunks to existing vectorstore
+        vectorstore.add_documents(chunks)
+        vectorstore.persist()
+        
+        logger.info(f"Successfully added {len(chunks)} chunks to vector store")
+        return vectorstore
+        
+    except Exception as e:
+        logger.error(f"Failed to add documents: {e}")
+        raise
+
+
+def remove_documents(page_ids: List[str], vectorstore: Chroma = None) -> Chroma:
+    """
+    Remove documents from vector store by page_id.
+   
+    Args:
+        page_ids: List of page IDs to remove
+        vectorstore: Optional existing Chroma vectorstore. If None, loads existing one.
+       
+    Returns:
+        Updated Chroma vector store instance
+    """
+    if not page_ids:
+        logger.warning("No page IDs to remove.")
+        return vectorstore if vectorstore else load_vectorstore()
+    
+    if vectorstore is None:
+        vectorstore = load_vectorstore()
+    
+    logger.info(f"Attempting to remove {len(page_ids)} pages from vector store...")
+    
+    try:
+        collection = vectorstore._collection
+        removed_count = 0
+        
+        for page_id in page_ids:
+            # Query for documents with this page_id
+            results = collection.get(where={"page_id": page_id})
+            
+            if results and results['ids']:
+                # Delete these documents
+                collection.delete(ids=results['ids'])
+                removed_count += len(results['ids'])
+                logger.debug(f"Removed {len(results['ids'])} chunks for page {page_id}")
+        
+        vectorstore.persist()
+        logger.info(f"Removed {removed_count} chunks total from vector store")
+        
+        return vectorstore
+        
+    except Exception as e:
+        logger.error(f"Failed to remove documents: {e}")
+        raise
+
+
+def update_documents(documents: List[Document], page_ids_to_remove: List[str] = None, 
+                    vectorstore: Chroma = None) -> Chroma:
+    """
+    Update documents in vector store (remove old, add new).
+   
+    Args:
+        documents: New version of documents to add
+        page_ids_to_remove: Page IDs of old documents to remove. If None, extracts from new documents.
+        vectorstore: Optional existing Chroma vectorstore. If None, loads existing one.
+       
+    Returns:
+        Updated Chroma vector store instance
+    """
+    if not documents:
+        logger.warning("No documents to update.")
+        return vectorstore if vectorstore else load_vectorstore()
+    
+    if vectorstore is None:
+        vectorstore = load_vectorstore()
+    
+    # Extract page IDs from documents if not provided
+    if page_ids_to_remove is None:
+        page_ids_to_remove = [doc.metadata.get('page_id') for doc in documents 
+                             if doc.metadata.get('page_id')]
+    
+    logger.info(f"Updating {len(documents)} documents...")
+    
+    # Remove old versions
+    if page_ids_to_remove:
+        vectorstore = remove_documents(page_ids_to_remove, vectorstore)
+    
+    # Add new versions
+    vectorstore = add_documents(documents, vectorstore)
+    
+    logger.info("Documents updated successfully")
+    return vectorstore
+
+
+def get_vectorstore(collection_name: str = "confluence_docs") -> Chroma:
+    """
+    Get a vector store for a specific collection.
+    Loads existing or raises error if not found.
+   
+    Args:
+        collection_name: Name of the collection ("confluence_docs" or "stackoverflow_docs")
+       
+    Returns:
+        Chroma vector store instance
     """
     if not os.path.exists(CHROMA_PERSIST_DIR):
+        raise FileNotFoundError(f"ChromaDB directory not found at '{CHROMA_PERSIST_DIR}'")
+    
+    embeddings = get_embeddings()
+    
+    try:
+        vectorstore = Chroma(
+            persist_directory=CHROMA_PERSIST_DIR,
+            embedding_function=embeddings,
+            collection_name=collection_name
+        )
+        count = vectorstore._collection.count()
+        logger.info(f"Loaded '{collection_name}' collection with {count} documents")
+        return vectorstore
+    except Exception as e:
+        logger.error(f"Failed to load collection '{collection_name}': {e}")
+        raise
+
+
+def create_vectorstore_so(documents: List[Document], db_path: str = None) -> Chroma:
+    """
+    Create a new ChromaDB vector store for Stack Overflow documents.
+   
+    This will chunk documents, embed using Ollama, and persist to local directory.
+   
+    Args:
+        documents: List of LangChain Documents to embed
+        db_path: Optional custom path for SO database (default: STACKOVERFLOW_DB_PATH)
+       
+    Returns:
+        Chroma vector store instance
+    """
+    if db_path is None:
+        db_path = STACKOVERFLOW_DB_PATH
+    
+    if not documents:
+        raise ValueError("No documents provided to create Stack Overflow vector store.")
+   
+    logger.info(f"Creating Stack Overflow vector store at {db_path}...")
+   
+    # Chunk documents
+    chunks = chunk_documents(documents)
+   
+    if not chunks:
+        raise ValueError("No chunks generated from documents.")
+   
+    # Get embeddings
+    embeddings = get_embeddings()
+    
+    # Create directory if doesn't exist
+    os.makedirs(db_path, exist_ok=True)
+   
+    try:
+        # Create ChromaDB vector store
+        vectorstore = Chroma.from_documents(
+            documents=chunks,
+            embedding=embeddings,
+            persist_directory=db_path,
+            collection_name="stackoverflow_docs"
+        )
+       
+        logger.info(f"Stack Overflow vector store created at {db_path}")
+        logger.info(f"Total chunks embedded: {len(chunks)}")
+       
+        return vectorstore
+       
+    except Exception as e:
+        logger.error(f"Failed to create Stack Overflow vector store: {e}")
+        raise
+
+
+def load_vectorstore_so(db_path: str = None) -> Chroma:
+    """
+    Load an existing Stack Overflow vector store from disk.
+   
+    Args:
+        db_path: Optional custom path (default: STACKOVERFLOW_DB_PATH)
+   
+    Returns:
+        Chroma vector store instance
+       
+    Raises:
+        FileNotFoundError: If the vector store directory doesn't exist.
+    """
+    if db_path is None:
+        db_path = STACKOVERFLOW_DB_PATH
+    
+    if not os.path.exists(db_path):
+        raise FileNotFoundError(
+            f"Stack Overflow database not found at '{db_path}'. "
+            "Please run the Stack Overflow ingestion first."
+        )
+   
+    chroma_files = os.listdir(db_path)
+    if not chroma_files:
+        raise FileNotFoundError(f"Stack Overflow database directory '{db_path}' is empty.")
+   
+    logger.info(f"Loading Stack Overflow vector store from {db_path}...")
+   
+    try:
+        embeddings = get_embeddings()
+       
+        vectorstore = Chroma(
+            persist_directory=db_path,
+            embedding_function=embeddings,
+            collection_name="stackoverflow_docs"
+        )
+       
+        # Verify the collection has documents
+        collection = vectorstore._collection
+        count = collection.count()
+       
+        if count == 0:
+            raise FileNotFoundError("Stack Overflow collection is empty.")
+       
+        logger.info(f"Stack Overflow vector store loaded. Documents: {count}")
+       
+        return vectorstore
+       
+    except FileNotFoundError:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to load Stack Overflow vector store: {e}")
+        raise
+
+
+def vectorstore_so_exists(db_path: str = None) -> bool:
+    """
+    Check if a Stack Overflow vector store exists.
+   
+    Args:
+        db_path: Optional custom path
+   
+    Returns:
+        True if SO vector store exists and has documents
+    """
+    if db_path is None:
+        db_path = STACKOVERFLOW_DB_PATH
+    
+    if not os.path.exists(db_path):
         return False
    
-    chroma_files = os.listdir(CHROMA_PERSIST_DIR)
+    chroma_files = os.listdir(db_path)
     if not chroma_files:
         return False
    
     try:
-        # Try to load and check if it has documents
-        embeddings = get_embeddings()
-        vectorstore = Chroma(
-            persist_directory=CHROMA_PERSIST_DIR,
-            embedding_function=embeddings,
-            collection_name="confluence_docs"
-        )
-        count = vectorstore._collection.count()
-        return count > 0
+        vectorstore = load_vectorstore_so(db_path)
+        return True
     except Exception:
         return False
- 
+
+
  
 if __name__ == "__main__":
     # Test loading the vector store

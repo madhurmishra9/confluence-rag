@@ -4,6 +4,7 @@ Confluence RAG - Main Entry Point
 A local RAG system that connects Confluence documentation to Ollama LLM.
 - Auto-detects existing ChromaDB on startup
 - Fetches and embeds Confluence pages if needed
+- Supports incremental updates on each run
 - Provides interactive Q&A in terminal
 """
  
@@ -16,8 +17,12 @@ from dotenv import load_dotenv
 load_dotenv()
  
 # Import modules after env vars are loaded
-from src.fetch_confluence import fetch_pages
-from src.embed_and_store import create_vectorstore, load_vectorstore, vectorstore_exists
+from src.fetch_confluence import fetch_pages, fetch_incremental_pages
+from src.confluence_metadata import ConfluenceMetadataTracker
+from src.embed_and_store import (
+    create_vectorstore, load_vectorstore, vectorstore_so_exists,
+    add_documents, remove_documents, update_documents
+)
 from src.query import build_qa_chain, ask
  
 # Configure logging
@@ -44,7 +49,7 @@ def print_banner():
  
 def ingest_documents():
     """
-    Fetch Confluence pages and create the vector store.
+    Fetch Confluence pages and create the vector store (initial ingestion).
    
     Returns:
         Chroma vector store instance, or None if no documents.
@@ -64,8 +69,24 @@ def ingest_documents():
         print("      (This may take a few minutes depending on the number of pages)")
        
         vectorstore = create_vectorstore(documents)
+        
+        # Initialize metadata tracker with all fetched pages
+        metadata_tracker = ConfluenceMetadataTracker()
+        print("\n[3/3] Saving metadata for incremental updates...")
+        for doc in documents:
+            metadata = doc.metadata
+            metadata_tracker.add_or_update_page(
+                page_id=metadata.get('page_id', ''),
+                title=metadata.get('title', ''),
+                version=metadata.get('version', 1),
+                modified=metadata.get('modified', ''),
+                url=metadata.get('url', ''),
+                space_key=metadata.get('space_key', ''),
+                chunk_count=0
+            )
+        metadata_tracker.save()
        
-        print("\n[3/3] Vector store created and saved!")
+        print(f"      Vector store created and saved!")
         print(f"      Location: ./confluence_db/")
        
         return vectorstore
@@ -78,6 +99,60 @@ def ingest_documents():
         logger.error(f"Ingestion failed: {e}")
         print(f"\nERROR: Failed to ingest documents: {e}")
         return None
+
+
+def update_documents_incremental(vectorstore):
+    """
+    Check for new/modified/deleted pages and update vector store incrementally.
+   
+    Args:
+        vectorstore: Existing Chroma vector store instance
+       
+    Returns:
+        Updated vectorstore
+    """
+    print("\nChecking for updates from Confluence...")
+    
+    try:
+        metadata_tracker = ConfluenceMetadataTracker()
+        
+        # Fetch incremental changes
+        new_docs, modified_docs, deleted_ids = fetch_incremental_pages(metadata_tracker)
+        
+        # Report findings
+        if not new_docs and not modified_docs and not deleted_ids:
+            print("✓ No changes detected. Confluence documentation is up-to-date.")
+            return vectorstore
+        
+        # Process changes
+        changes_made = False
+        
+        if deleted_ids:
+            print(f"  - Removing {len(deleted_ids)} deleted pages...")
+            vectorstore = remove_documents(deleted_ids, vectorstore)
+            changes_made = True
+        
+        if modified_docs:
+            print(f"  - Updating {len(modified_docs)} modified pages...")
+            modified_ids = [doc.metadata.get('page_id') for doc in modified_docs]
+            vectorstore = update_documents(modified_docs, modified_ids, vectorstore)
+            changes_made = True
+        
+        if new_docs:
+            print(f"  - Adding {len(new_docs)} new pages...")
+            vectorstore = add_documents(new_docs, vectorstore)
+            changes_made = True
+        
+        if changes_made:
+            print("✓ Confluence documentation updated successfully!")
+        
+        return vectorstore
+        
+    except Exception as e:
+        logger.error(f"Incremental update failed: {e}")
+        print(f"⚠ Failed to check for updates: {e}")
+        print("  Continuing with cached data...")
+        return vectorstore
  
  
 def run_interactive_mode(vectorstore):
@@ -133,13 +208,15 @@ def main():
     # Check if vector store already exists
     print("\nChecking for existing vector store...")
    
-    if vectorstore_exists():
+    if vectorstore_so_exists():
         print("Found existing ChromaDB! Loading...")
         try:
             vectorstore = load_vectorstore()
             print("Vector store loaded successfully.")
-            print("\nSkipping Confluence fetch (using cached data).")
-            print("To refresh data, delete the './confluence_db/' folder and restart.")
+            
+            # Check for updates
+            vectorstore = update_documents_incremental(vectorstore)
+            
         except Exception as e:
             logger.error(f"Failed to load vector store: {e}")
             print(f"\nERROR: Failed to load existing vector store: {e}")
