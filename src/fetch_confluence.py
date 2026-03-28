@@ -1,11 +1,11 @@
 """
 Confluence Page Fetcher
- 
+
 Fetches all pages from Confluence using the REST API with pagination.
 Strips HTML and returns LangChain Document objects.
 Supports incremental fetching to detect new/modified/deleted pages.
 """
- 
+
 import os
 import logging
 import requests
@@ -14,18 +14,18 @@ from bs4 import BeautifulSoup
 from langchain_core.documents import Document
 from dotenv import load_dotenv
 from .confluence_metadata import ConfluenceMetadataTracker
- 
+
 load_dotenv()
- 
+
 logger = logging.getLogger(__name__)
- 
+
 # Environment variables
 CONFLUENCE_URL = os.getenv("CONFLUENCE_URL")
 CONFLUENCE_EMAIL = os.getenv("CONFLUENCE_EMAIL")
 CONFLUENCE_API_TOKEN = os.getenv("CONFLUENCE_API_TOKEN")
 CONFLUENCE_SPACE_KEY = os.getenv("CONFLUENCE_SPACE_KEY", "")  # Optional: filter by space
- 
- 
+
+
 def validate_env_vars() -> None:
     """Validate required environment variables are set."""
     missing = []
@@ -35,85 +35,79 @@ def validate_env_vars() -> None:
         missing.append("CONFLUENCE_EMAIL")
     if not CONFLUENCE_API_TOKEN:
         missing.append("CONFLUENCE_API_TOKEN")
-   
+
     if missing:
         raise EnvironmentError(
             f"Missing required environment variables: {', '.join(missing)}. "
             "Please check your .env file."
         )
- 
- 
+
+
 def strip_html(html_content: str) -> str:
     """Strip HTML tags and return clean text."""
     if not html_content:
         return ""
-   
+
     soup = BeautifulSoup(html_content, "lxml")
-   
-    # Remove script and style elements
+
     for element in soup(["script", "style"]):
         element.decompose()
-   
-    # Get text and clean up whitespace
+
     text = soup.get_text(separator=" ")
     lines = (line.strip() for line in text.splitlines())
     chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
     text = " ".join(chunk for chunk in chunks if chunk)
-   
+
     return text
- 
- 
+
+
 def get_base_url() -> str:
     """Extract base URL from Confluence URL."""
     url = CONFLUENCE_URL.rstrip("/")
-    # Handle URLs like https://domain.atlassian.net/wiki/...
     if "/wiki" in url:
         return url.split("/wiki")[0]
     return url
 
+
 def fetch_raw_pages() -> List[Dict]:
     """
     Fetch all pages from Confluence REST API with pagination.
-    
+
     Returns:
         List of raw page dictionaries from the Confluence API
-    
+
     Raises:
         requests.exceptions.RequestException: If API call fails
     """
     validate_env_vars()
-    
+
     all_pages = []
     start = 0
-    limit = 50  # Confluence API pagination limit
+    limit = 50
     max_retries = 3
-    
+
     api_url = f"{CONFLUENCE_URL.rstrip('/')}/rest/api/content"
-    
-    # Build query parameters
+
     params = {
         "type": "page",
         "limit": limit,
         "expand": "body.storage,version,space",
     }
-    
-    # Optional: filter by space key if provided
+
     if CONFLUENCE_SPACE_KEY:
         params["spaceKey"] = CONFLUENCE_SPACE_KEY
         logger.info(f"Fetching pages from space: {CONFLUENCE_SPACE_KEY}")
     else:
         logger.info("Fetching pages from all spaces")
-    
-    # Setup basic auth
+
     auth = (CONFLUENCE_EMAIL, CONFLUENCE_API_TOKEN)
-    
+
     try:
         while True:
             params["start"] = start
-            
+
             logger.info(f"Fetching pages (start={start}, limit={limit})...")
-            
-            # Retry logic for network failures
+
             for attempt in range(max_retries):
                 try:
                     response = requests.get(
@@ -131,27 +125,25 @@ def fetch_raw_pages() -> List[Dict]:
                         continue
                     else:
                         raise
-            
-            # Parse response
+
             data = response.json()
             pages = data.get("results", [])
-            
+
             if not pages:
                 logger.info(f"No more pages to fetch (total fetched: {len(all_pages)})")
                 break
-            
+
             logger.info(f"Fetched {len(pages)} pages (total so far: {len(all_pages) + len(pages)})")
             all_pages.extend(pages)
-            
-            # Check if there are more pages
+
             if not data.get("_links", {}).get("next"):
                 logger.info(f"All pages fetched. Total: {len(all_pages)}")
                 break
-            
+
             start += limit
-        
+
         return all_pages
-    
+
     except requests.exceptions.ConnectionError:
         logger.error(
             f"Failed to connect to Confluence at {CONFLUENCE_URL}. "
@@ -160,13 +152,9 @@ def fetch_raw_pages() -> List[Dict]:
         raise
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 401:
-            logger.error(
-                "Authentication failed. Please verify your email and API token in .env"
-            )
+            logger.error("Authentication failed. Please verify your email and API token in .env")
         elif e.response.status_code == 403:
-            logger.error(
-                "Access denied. Your API token may not have permission to access Confluence."
-            )
+            logger.error("Access denied. Your API token may not have permission to access Confluence.")
         elif e.response.status_code == 404:
             logger.error(
                 f"Confluence URL not found: {CONFLUENCE_URL}. "
@@ -182,46 +170,40 @@ def fetch_raw_pages() -> List[Dict]:
 
 def pages_to_documents(pages: List[Dict], base_url: str = None) -> List[Document]:
     """
-    Convert raw page data to LangChain Document objects
-    
+    Convert raw page data to LangChain Document objects.
+
     Args:
         pages: List of raw page dictionaries from API
         base_url: Base URL for building page URLs (auto-detected if None)
-    
+
     Returns:
         List of LangChain Document objects
     """
     if base_url is None:
         base_url = get_base_url()
-    
+
     documents: List[Document] = []
-    
+
     for page in pages:
         try:
             page_id = page.get("id", "")
             title = page.get("title", "Untitled")
-            
-            # Get page body
+
             body_storage = page.get("body", {}).get("storage", {})
             html_content = body_storage.get("value", "")
-            
-            # Strip HTML to get plain text
+
             text_content = strip_html(html_content)
-            
-            # Skip empty pages
+
             if not text_content.strip():
                 logger.debug(f"Skipping empty page: {title}")
                 continue
-            
-            # Build page URL
+
             space_key = page.get("space", {}).get("key", "")
             page_url = f"{base_url}/wiki/spaces/{space_key}/pages/{page_id}"
-            
-            # Get version info
+
             version = page.get("version", {}).get("number", 1)
             modified = page.get("version", {}).get("when", "")
-            
-            # Create LangChain Document
+
             doc = Document(
                 page_content=text_content,
                 metadata={
@@ -235,28 +217,26 @@ def pages_to_documents(pages: List[Dict], base_url: str = None) -> List[Document
             )
             documents.append(doc)
             logger.debug(f"Created document: {title}")
-            
+
         except Exception as e:
             logger.warning(f"Error processing page {page.get('title', 'Unknown')}: {e}")
             continue
-    
+
     return documents
 
 
- 
 def fetch_pages() -> List[Document]:
     """
     Fetch all Confluence pages with pagination.
-   
+
     Returns:
         List of LangChain Document objects with page content and metadata.
     """
     validate_env_vars()
     base_url = get_base_url()
-    
-    # Fetch raw pages
+
     raw_pages = fetch_raw_pages()
-    
+
     if not raw_pages:
         logger.warning(
             "No documents were fetched from Confluence. "
@@ -264,55 +244,62 @@ def fetch_pages() -> List[Document]:
             "don't have access to any pages."
         )
         return []
-    
-    # Convert to documents
+
     documents = pages_to_documents(raw_pages, base_url)
     logger.info(f"Total documents created: {len(documents)}")
-    
+
     return documents
 
 
-def fetch_incremental_pages(metadata_tracker: ConfluenceMetadataTracker = None) -> Tuple[List[Document], List[Document], List[str]]:
+def fetch_incremental_pages(
+    metadata_tracker: ConfluenceMetadataTracker = None,
+) -> Tuple[List[Document], List[Document], List[str]]:
     """
     Fetch Confluence pages and detect new, modified, and deleted pages.
-    
+
     Args:
         metadata_tracker: Optional ConfluenceMetadataTracker. If None, creates one.
-    
+
     Returns:
         Tuple of (new_documents, modified_documents, deleted_page_ids)
     """
     if metadata_tracker is None:
         metadata_tracker = ConfluenceMetadataTracker()
-    
+
     validate_env_vars()
     base_url = get_base_url()
-    
+
     logger.info("Starting incremental Confluence fetch...")
-    
-    # Fetch raw pages
+
     raw_pages = fetch_raw_pages()
-    
+
     if not raw_pages:
         logger.warning("No pages found in Confluence")
         return [], [], []
-    
-    # Detect changes
+
     logger.info("Detecting changes...")
     new_raw, modified_raw, deleted_ids = metadata_tracker.detect_changes(
-        [{'id': p.get('id'), 'title': p.get('title'), 'version': p.get('version', {}).get('number', 1),
-          'modified': p.get('version', {}).get('when', ''), 'url': '', 'space_key': p.get('space', {}).get('key', '')}
-         for p in raw_pages]
+        [
+            {
+                'id': p.get('id'),
+                'title': p.get('title'),
+                'version': p.get('version', {}).get('number', 1),
+                'modified': p.get('version', {}).get('when', ''),
+                'url': '',
+                'space_key': p.get('space', {}).get('key', ''),
+            }
+            for p in raw_pages
+        ]
     )
-    
-    # Convert to documents
+
     new_docs = pages_to_documents(new_raw, base_url)
     modified_docs = pages_to_documents(modified_raw, base_url)
-    
-    # Log summary
-    logger.info(f"Change summary: {len(new_docs)} new, {len(modified_docs)} modified, {len(deleted_ids)} deleted")
-    
-    # Update metadata
+
+    logger.info(
+        f"Change summary: {len(new_docs)} new, {len(modified_docs)} modified, "
+        f"{len(deleted_ids)} deleted"
+    )
+
     for page in new_raw + modified_raw:
         page_id = page.get('id', '')
         metadata_tracker.add_or_update_page(
@@ -322,24 +309,20 @@ def fetch_incremental_pages(metadata_tracker: ConfluenceMetadataTracker = None) 
             modified=page.get('version', {}).get('when', ''),
             url=f"{base_url}/wiki/spaces/{page.get('space', {}).get('key', '')}/pages/{page_id}",
             space_key=page.get('space', {}).get('key', ''),
-            chunk_count=0  # Will be updated after chunking
+            chunk_count=0,
         )
-    
-    # Remove deleted pages from metadata
+
     for page_id in deleted_ids:
         metadata_tracker.remove_page(page_id)
-    
-    # Save metadata
+
     metadata_tracker.save()
-    
+
     return new_docs, modified_docs, deleted_ids
 
 
- 
 if __name__ == "__main__":
-    # Test the fetch function
     logging.basicConfig(level=logging.INFO)
     docs = fetch_pages()
     print(f"\nFetched {len(docs)} documents:")
-    for doc in docs[:5]:  # Print first 5
+    for doc in docs[:5]:
         print(f"  - {doc.metadata['title']}")
