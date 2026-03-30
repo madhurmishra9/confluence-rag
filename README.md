@@ -9,11 +9,13 @@ A local RAG (Retrieval-Augmented Generation) system that connects your Confluenc
 - 🧠 **Local LLM**: Uses Ollama with llama3.1:8b for completely private, offline processing
 - 📚 **Smart Chunking**: RecursiveCharacterTextSplitter with configurable chunk size and overlap
 - 🔍 **Vector Search**: ChromaDB for fast semantic search with persistent storage
-- 🎯 **Context-Aware**: Custom prompt ensures answers come only from your indexed content
+- 🎯 **Zero Hallucination**: temperature=0.0 + strict context-only prompts — LLM never invents facts
 - 🔄 **Incremental Updates**: Detects new, modified, and deleted Confluence pages — no full re-ingestion needed
 - 🔀 **Cross-Linking**: Unified mode suggests related Confluence pages alongside Stack Overflow answers
-- 📱 **Three Run Modes**: Confluence-only, Stack Overflow-only, or Unified with cross-linking
+- 📊 **On-Demand Dashboards**: Generates rich HTML dashboards with LLM-grounded summaries, topic extraction, bar charts, and cross-link mapping — opens automatically in your browser
+- 📱 **Four Run Modes**: Confluence-only, Stack Overflow-only, Unified with cross-linking, or Dashboard
 - ⚡ **Resumable**: Detects existing vector stores and skips fetch/embed on subsequent runs
+- 📝 **Detailed Logging**: Every retrieval, LLM call, latency, and confidence score is logged
 
 ## Tech Stack
 
@@ -32,9 +34,9 @@ A local RAG (Retrieval-Augmented Generation) system that connects your Confluenc
 
 | File | Purpose |
 |---|---|
-| `main.py` | Confluence-only RAG with incremental updates |
-| `main_so.py` | Stack Overflow-only RAG |
-| `main_unified.py` | Interactive menu to choose Confluence, SO, or both with cross-linking |
+| `main_unified.py` | Unified interactive menu — Confluence, Stack Overflow, or both with cross-linking + dashboard |
+
+> **Note**: `main_unified.py` is the single entry point for all modes. The older `main.py` and `main_so.py` are superseded by the unified runner.
 
 ---
 
@@ -206,10 +208,11 @@ Presents an interactive menu:
 
 ```
 SELECT MODE:
-  1. Confluence RAG       (Search your Confluence documentation)
-  2. Stack Overflow RAG   (Search Stack Overflow Q&A)
-  3. Unified Mode         (Search both + cross-linked suggestions)
-  4. Exit
+  1. Confluence RAG       — Search Confluence documentation
+  2. Stack Overflow RAG   — Search Stack Overflow Q&A
+  3. Unified Mode         — Search both + cross-linked suggestions
+  4. Dashboard            — Generate on-demand HTML dashboards
+  5. Exit
 ```
 
 **Unified Mode** queries both sources and shows:
@@ -218,6 +221,34 @@ SELECT MODE:
 - Cross-linked Confluence page suggestions based on the SO result's tags
 
 Type `back` to return to the menu, `exit` to quit.
+
+---
+
+### Mode 4 — Dashboard
+
+Select **Dashboard** from the main menu. You will be prompted to choose:
+
+```
+  1. Confluence Dashboard
+  2. Stack Overflow Dashboard
+  3. Both (generate two dashboards)
+  4. Back
+```
+
+The dashboard engine:
+1. Retrieves all indexed documents from ChromaDB (no new API calls)
+2. Computes metrics purely from metadata (page counts, tag frequencies, score distributions)
+3. Runs grounded LLM calls (temperature=0.0) for executive summary, key topics, and bullet insights
+4. Renders a self-contained HTML file in `./dashboards/` and opens it in your browser
+
+Dashboard sections include:
+- Stat cards (total pages/questions, chunks, spaces/tags, averages)
+- Executive summary (LLM-generated, grounded in indexed content)
+- Key topics (LLM-extracted, JSON array)
+- Bar charts (top pages/tags by frequency, space/score distribution)
+- Recently modified pages or highest-scored questions table
+- Generation log (stage timings, doc counts, fallback notices)
+- Cross-link tab (SO tags → related Confluence pages) when both sources are loaded
 
 ---
 
@@ -251,8 +282,15 @@ RETRIEVER_K=5         # Chunks retrieved per query
 CHUNK_SIZE=500        # Characters per chunk
 CHUNK_OVERLAP=50      # Overlap between adjacent chunks
 
+# ── Dashboard ───────────────────────────────────────────────────────────────
+DASHBOARD_OUTPUT_DIR=./dashboards   # Where generated HTML dashboards are saved
+DASHBOARD_MAX_DOCS=50               # Max docs fed to LLM for dashboard insights
+DASHBOARD_TOP_N=10                  # Rows shown in ranked tables
+LLM_SUMMARY_DOCS=20                 # Docs used for executive summary generation
+
 # ── Logging ─────────────────────────────────────────────────────────────────
 LOG_LEVEL=INFO
+LOG_FILE=unified_rag.log
 ```
 
 ### Tuning Tips
@@ -288,19 +326,22 @@ confluence-rag/
 ├── requirements.txt               # Python dependencies
 ├── README.md                      # This file
 │
-├── main.py                        # Confluence-only entry point
-├── main_so.py                     # Stack Overflow-only entry point
-├── main_unified.py                # Unified mode with interactive menu
+├── main_unified.py                # Unified entry point — all four modes
 │
 ├── src/
 │   ├── __init__.py
 │   ├── fetch_confluence.py        # Confluence REST API client + incremental fetch
 │   ├── fetch_stackoverflow.py     # Stack Exchange API client
 │   ├── embed_and_store.py         # Chunking, ChromaDB create/load/update operations
-│   ├── query.py                   # LCEL RAG chain + ask() helper
+│   ├── query.py                   # LCEL RAG chain + ask() + ask_structured() helpers
 │   ├── confluence_metadata.py     # Page-version tracker for incremental updates
 │   ├── tag_linker.py              # Maps SO tags → Confluence keywords for cross-linking
-│   └── so_suggestions.py          # Suggestion engine: SO doc → related Confluence pages
+│   ├── so_suggestions.py          # Suggestion engine: SO doc → related Confluence pages
+│   ├── dashboard_generator.py     # Extracts grounded metrics + LLM insights from ChromaDB
+│   └── dashboard.py               # Renders metrics/insights → self-contained HTML dashboard
+│
+├── dashboards/                    # Generated HTML dashboards (auto-created)
+│   └── dashboard_<timestamp>.html
 │
 ├── confluence_db/                 # ChromaDB for Confluence (auto-created)
 │   └── [persisted vector data]
@@ -521,6 +562,15 @@ Free to use and modify
 ---
 
 ## Changelog
+
+### v2.2.0
+- **Bug fix — `query.py`**: Added `ask_structured()` and `NOT_FOUND_RESPONSE` exports that `dashboard.py` imports but were missing — would have caused `ImportError` at dashboard generation time
+- **Bug fix — `dashboard.py`**: Added `OLLAMA_LLM_MODEL` config variable — it was referenced in the footer HTML template but never defined, causing `NameError` on render
+- **Bug fix — `dashboard.py`**: Removed duplicate `from src.query import NOT_FOUND_RESPONSE` inside `_llm_generate_so_summary` (was imported twice in the same function)
+- **Bug fix — `dashboard.py`**: Fixed bare `except: pass` clauses in `_extract_so_stats` — now correctly catches only `(TypeError, ValueError)` to avoid silently swallowing unrelated exceptions
+- **Bug fix — `dashboard.py`**: Added proper `render_dashboard(data)` function — `main_unified.py` imports and calls `render_dashboard(data_dict)` but the module only had `generate_dashboard(vectorstore)`. The new function accepts pre-built data payloads from `dashboard_generator` and renders them to HTML
+- **Bug fix — `dashboard_generator.py`**: Added `_safe_int()` helper and replaced all bare `int()` metadata casts — these would crash with `ValueError`/`TypeError` on malformed or missing metadata fields
+- **README**: Updated entry points table (single `main_unified.py` entry point), project structure (added `dashboard.py`, `dashboard_generator.py`, `dashboards/` directory), running modes (added Mode 4 — Dashboard with full description), `.env` reference (added all dashboard and logging variables), and features list
 
 ### v2.1.0
 - **Stack Overflow integration** — new `fetch_stackoverflow.py`, `main_so.py`
