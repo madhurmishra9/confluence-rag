@@ -49,7 +49,7 @@ import logging
 import re
 from collections import Counter
 from datetime import datetime
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Tuple
 from pathlib import Path
 
 from langchain_core.documents import Document

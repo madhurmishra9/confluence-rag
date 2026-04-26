@@ -9,7 +9,7 @@ Supports incremental fetching to detect new/modified/deleted pages.
 import os
 import logging
 import requests
-from typing import List, Optional, Tuple, Dict
+from typing import List, Tuple, Dict
 from bs4 import BeautifulSoup
 from langchain_core.documents import Document
 from dotenv import load_dotenv

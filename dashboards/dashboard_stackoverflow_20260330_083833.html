@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RAG Dashboard — Stack Overflow</title>
+<style>
+:root {
+    --bg: #0f1117; --surface: #1c1f2e; --surface2: #252840;
+    --accent-blue: #4f8ef7; --accent-orange: #f7914f;
+    --accent-green: #4fc97f; --accent-purple: #a78bfa;
+    --text: #e2e8f0; --text-muted: #8892a4; --border: #2d3148;
+    --radius: 12px; --shadow: 0 4px 24px rgba(0,0,0,.4);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif;
+       font-size: 15px; line-height: 1.6; }
+header { background: linear-gradient(135deg,#1a1f3c 0%,#252840 100%);
+         border-bottom: 1px solid var(--border); padding: 28px 40px; }
+header h1 { font-size: 1.8rem; font-weight: 700; color: var(--accent-blue); }
+header p  { color: var(--text-muted); margin-top: 4px; }
+.nav-tabs { display: flex; gap: 4px; padding: 20px 40px 0; border-bottom: 1px solid var(--border);
+            background: var(--surface); }
+.nav-tab  { padding: 10px 24px; cursor: pointer; border-radius: 8px 8px 0 0;
+            color: var(--text-muted); font-weight: 500; border: 1px solid transparent;
+            border-bottom: none; transition: all .2s; }
+.nav-tab.active { background: var(--bg); color: var(--accent-blue);
+                  border-color: var(--border); }
+.tab-content { display: none; padding: 32px 40px; }
+.tab-content.active { display: block; }
+.stat-cards { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 28px; }
+.stat-card  { background: var(--surface); border: 1px solid var(--border);
+              border-radius: var(--radius); padding: 20px 28px; min-width: 160px;
+              flex: 1; box-shadow: var(--shadow); }
+.stat-icon  { font-size: 1.8rem; }
+.stat-value { font-size: 2rem; font-weight: 700; color: var(--accent-blue); }
+.stat-label { font-size: .82rem; color: var(--text-muted); margin-top: 4px; }
+.dashboard-section { background: var(--surface); border: 1px solid var(--border);
+                     border-radius: var(--radius); padding: 24px 28px;
+                     margin-bottom: 24px; box-shadow: var(--shadow); }
+.dashboard-section h2 { font-size: 1.1rem; font-weight: 600; color: var(--accent-purple);
+                         margin-bottom: 16px; border-bottom: 1px solid var(--border);
+                         padding-bottom: 10px; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.bar-chart { display: flex; flex-direction: column; gap: 8px; }
+.bar-row   { display: flex; align-items: center; gap: 10px; }
+.bar-label { width: 220px; font-size: .82rem; color: var(--text-muted);
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink:0; }
+.bar-track { flex: 1; background: var(--surface2); border-radius: 4px; height: 18px; overflow: hidden; }
+.bar-fill  { height: 100%; border-radius: 4px; transition: width .4s ease; }
+.bar-val   { width: 48px; text-align: right; font-size: .82rem; color: var(--text-muted); }
+.summary-box { background: var(--surface2); border-left: 3px solid var(--accent-blue);
+               border-radius: 6px; padding: 16px 20px; font-size: .92rem;
+               color: var(--text); line-height: 1.7; }
+.topic-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.topic-pill  { background: var(--surface2); border: 1px solid var(--accent-purple);
+               color: var(--accent-purple); padding: 4px 14px; border-radius: 20px;
+               font-size: .82rem; }
+.no-data { color: var(--text-muted); font-style: italic; font-size: .9rem; }
+.grounding-note { background: var(--surface2); border: 1px solid var(--accent-green);
+                  color: var(--accent-green); border-radius: 8px; padding: 10px 16px;
+                  font-size: .82rem; margin-bottom: 20px; }
+.log-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.log-table th { background: var(--surface2); color: var(--accent-blue);
+                padding: 8px 12px; text-align: left; }
+.log-table td { padding: 7px 12px; border-bottom: 1px solid var(--border); color: var(--text-muted); }
+.log-table tr:last-child td { border-bottom: none; }
+.so-question-link { color: var(--accent-blue); text-decoration: none; font-size: .88rem; }
+.so-question-link:hover { text-decoration: underline; }
+footer { text-align: center; padding: 28px; color: var(--text-muted); font-size: .8rem;
+         border-top: 1px solid var(--border); }
+@media (max-width: 768px) { .two-col { grid-template-columns: 1fr; }
+  .bar-label { width: 120px; } header { padding: 20px; } .tab-content { padding: 20px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>📊 RAG Analytics Dashboard</h1>
+  <p>Source: Stack Overflow &nbsp;|&nbsp; Generated: 2026-03-30 08:38:33
+     &nbsp;|&nbsp; All data grounded in indexed documents — zero hallucination</p>
+</header>
+<nav class="nav-tabs"><div class="nav-tab active" onclick="showTab('so-tab')">💻 Stack Overflow</div><div class="nav-tab" onclick="showTab('log-tab')">🔍 Generation Log</div></nav>
+<div class="tab-content active" id="so-tab"><div class='stat-cards'><div class='stat-card'>  <div class='stat-icon'>❓</div>  <div class='stat-value'>1000</div>  <div class='stat-label'>Questions Indexed</div></div><div class='stat-card'>  <div class='stat-icon'>🧩</div>  <div class='stat-value'>4013</div>  <div class='stat-label'>Total Chunks</div></div><div class='stat-card'>  <div class='stat-icon'>⭐</div>  <div class='stat-value'>1045.6</div>  <div class='stat-label'>Avg Score</div></div><div class='stat-card'>  <div class='stat-icon'>💬</div>  <div class='stat-value'>17.9</div>  <div class='stat-label'>Avg Answers</div></div><div class='stat-card'>  <div class='stat-icon'>👁️</div>  <div class='stat-value'>0</div>  <div class='stat-label'>Avg Views</div></div></div><div class='grounding-note'>✅ All metrics are computed from documents in ChromaDB. The LLM summary uses only those documents as context — zero hallucination guaranteed.</div><section class='dashboard-section'>  <h2>Common Problems & Solutions (LLM-generated, grounded in indexed Q&A)</h2>  <div class='summary-box'>Insufficient data.</div></section><div class='two-col'><section class='dashboard-section'>  <h2>Top 15 Tags</h2>  <div class='bar-chart'><div class='bar-row'>  <span class='bar-label' title='python'>python</span>  <div class='bar-track'>    <div class='bar-fill' style='width:100%;background:#f7914f'></div>  </div>  <span class='bar-val'>1000</span></div>
+<div class='bar-row'>  <span class='bar-label' title='list'>list</span>  <div class='bar-track'>    <div class='bar-fill' style='width:9%;background:#f7914f'></div>  </div>  <span class='bar-val'>90</span></div>
+<div class='bar-row'>  <span class='bar-label' title='pandas'>pandas</span>  <div class='bar-track'>    <div class='bar-fill' style='width:9%;background:#f7914f'></div>  </div>  <span class='bar-val'>87</span></div>
+<div class='bar-row'>  <span class='bar-label' title='string'>string</span>  <div class='bar-track'>    <div class='bar-fill' style='width:8%;background:#f7914f'></div>  </div>  <span class='bar-val'>80</span></div>
+<div class='bar-row'>  <span class='bar-label' title='dataframe'>dataframe</span>  <div class='bar-track'>    <div class='bar-fill' style='width:7%;background:#f7914f'></div>  </div>  <span class='bar-val'>68</span></div>
+<div class='bar-row'>  <span class='bar-label' title='dictionary'>dictionary</span>  <div class='bar-track'>    <div class='bar-fill' style='width:6%;background:#f7914f'></div>  </div>  <span class='bar-val'>60</span></div>
+<div class='bar-row'>  <span class='bar-label' title='pip'>pip</span>  <div class='bar-track'>    <div class='bar-fill' style='width:4%;background:#f7914f'></div>  </div>  <span class='bar-val'>45</span></div>
+<div class='bar-row'>  <span class='bar-label' title='datetime'>datetime</span>  <div class='bar-track'>    <div class='bar-fill' style='width:4%;background:#f7914f'></div>  </div>  <span class='bar-val'>35</span></div>
+<div class='bar-row'>  <span class='bar-label' title='python-3.x'>python-3.x</span>  <div class='bar-track'>    <div class='bar-fill' style='width:3%;background:#f7914f'></div>  </div>  <span class='bar-val'>34</span></div>
+<div class='bar-row'>  <span class='bar-label' title='matplotlib'>matplotlib</span>  <div class='bar-track'>    <div class='bar-fill' style='width:3%;background:#f7914f'></div>  </div>  <span class='bar-val'>32</span></div>
+</div></section><section class='dashboard-section'>  <h2>Score Distribution</h2>  <p class='no-data'>No score data available.</p></section></div><section class='dashboard-section'>  <h2>Top 10 Highest-Scored Questions</h2>  <table class='log-table'><tr><th>Question</th><th>Score</th></tr><tr><td><a class='so-question-link' href='https://stackoverflow.com/questions/231767/what-does-the-yield-keyword-do-in-python' target='_blank'>What does the &quot;yield&quot; keyword do in Python?</a></td><td>13130</td></tr><tr><td><a class='so-question-link' href='https://stackoverflow.com/questions/419163/what-does-if-name-main-do' target='_blank'>What does if __name__ == &quot;__main__&quot;: do?</a></td><td>8436</td></tr><tr><td><a class='so-question-link' href='https://stackoverflow.com/questions/394809/does-python-have-a-ternary-conditional-operator' target='_blank'>Does Python have a ternary conditional operator?</a></td><td>8124</td></tr><tr><td><a class='so-question-link' href='https://stackoverflow.com/questions/100003/what-are-metaclasses-in-python' target='_blank'>What are metaclasses in Python?</a></td><td>7528</td></tr><tr><td><a class='so-question-link' href='https://stackoverflow.com/questions/82831/how-do-i-check-whether-a-file-exists-without-exceptions' target='_blank'>How do I check whether a file exists without exceptions?</a></td><td>7344</td></tr><tr><td><a class='so-question-link' href='https://stackoverflow.com/questions/38987/how-do-i-merge-two-dictionaries-in-a-single-expression-in-python' target='_blank'>How do I merge two dictionaries in a single expression in Python?</a></td><td>7125</td></tr><tr><td><a class='so-question-link' href='https://stackoverflow.com/questions/89228/how-do-i-execute-a-program-or-call-a-system-command' target='_blank'>How do I execute a program or call a system command?</a></td><td>6290</td></tr><tr><td><a class='so-question-link' href='https://stackoverflow.com/questions/273192/how-do-i-create-a-directory-and-any-missing-parent-directories' target='_blank'>How do I create a directory, and any missing parent directories?</a></td><td>5818</td></tr><tr><td><a class='so-question-link' href='https://stackoverflow.com/questions/522563/how-can-i-access-the-index-value-in-a-for-loop' target='_blank'>How can I access the index value in a &#39;for&#39; loop?</a></td><td>5672</td></tr><tr><td><a class='so-question-link' href='https://stackoverflow.com/questions/952914/how-do-i-make-a-flat-list-out-of-a-list-of-lists' target='_blank'>How do I make a flat list out of a list of lists?</a></td><td>5511</td></tr></table></section></div><div class="tab-content" id="log-tab"><section class='dashboard-section'>  <h2>Dashboard Generation Log</h2>  <table class='log-table'><tr><th>Stage</th><th>Source</th><th>Status</th><th>Docs Used</th><th>Time (ms)</th><th>Note</th></tr><tr><td>Data generation</td><td>stackoverflow</td><td style='color:#4fc97f'>✅ OK</td><td>4013</td><td>6400</td><td>All LLM outputs are derived exclusively from stored Stack Overflow documents. Temperature=0.0. No external knowledge used.</td></tr><tr><td>HTML render</td><td>render_dashboard()</td><td style='color:#4fc97f'>✅ Complete</td><td>—</td><td>—</td><td>Rendered at 2026-03-30 08:38:33</td></tr></table></section></div>
+<footer>
+  Generated by local Ollama LLM (llama3.1:8b) · Data from ChromaDB ·
+  Zero hallucination — LLM used only indexed documents as context
+</footer>
+<script>
+function showTab(id) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    event.target.classList.add('active');
+}
+</script>
+</body>
+</html>

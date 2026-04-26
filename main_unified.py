@@ -31,7 +31,7 @@ from src.embed_and_store import (
 )
 from src.tag_linker import TagLinker
 from src.so_suggestions import SOSuggestionEngine
-from src.query import build_qa_chain, ask, format_sources
+from src.query import build_qa_chain, ask
 from src.dashboard_generator import (
     generate_confluence_dashboard_data,
     generate_stackoverflow_dashboard_data,

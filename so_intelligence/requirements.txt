@@ -1,0 +1,13 @@
+ollama>=0.2.0
+langchain-ollama>=0.1.0
+chromadb>=0.5.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+sqlite-utils>=3.35
+requests>=2.31.0
+reportlab>=4.0.0
+python-docx>=1.1.0
+pandas>=2.0.0
+fastapi>=0.110.0
+uvicorn>=0.29.0
+rich>=13.0.0

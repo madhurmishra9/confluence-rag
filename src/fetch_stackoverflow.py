@@ -10,7 +10,7 @@ import os
 import time
 import logging
 import requests
-from typing import List, Dict, Optional
+from typing import List, Dict
 from datetime import datetime, timezone
 from bs4 import BeautifulSoup
 from langchain_core.documents import Document

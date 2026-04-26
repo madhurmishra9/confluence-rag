@@ -526,6 +526,166 @@ python main_unified.py
 
 ---
 
+## SO Intelligence Module (Module 7)
+
+The **SO Intelligence** submodule (`so_intelligence/`) provides an automated pipeline for advanced Stack Overflow analysis, pattern detection, and report generation powered by local Ollama LLMs.
+
+### Features
+
+- 🔍 **Pattern Detection** — LLM-driven identification of trends, pain points, and recurring solutions
+- ✅ **Solution Verification** — Evidence-based confidence scoring for suggested solutions
+- 📊 **Temporal Analysis** — Before/after comparison to measure intervention impact
+- 📄 **Multi-format Reports** — PDF and DOCX generation with charts and insights
+- 🖥️ **REST API + Dashboard** — Web-based exploration of findings
+- ⚡ **Caching & Recovery** — SQLite persistence with TTL, automatic retry logic
+
+### Entry Points
+
+The SO Intelligence module provides a unified CLI with four subcommands:
+
+| Command | Purpose |
+|---------|---------|
+| `python -m so_intelligence run` | Execute the full analysis pipeline |
+| `python -m so_intelligence serve` | Start API + web dashboard |
+| `python -m so_intelligence status` | View system status and last run |
+| `python -m so_intelligence validate-config` | Health check all dependencies |
+
+### Quick Start
+
+1. **Validate setup:**
+   ```bash
+   python -m so_intelligence validate-config
+   ```
+   All checks must pass before running the pipeline.
+
+2. **Run analysis (default tags & last 30 days):**
+   ```bash
+   python -m so_intelligence run
+   ```
+
+3. **Run with specific tags and custom date range:**
+   ```bash
+   python -m so_intelligence run --tags cloudspanner alloydb --days 30
+   ```
+
+4. **Start dashboard:**
+   ```bash
+   python -m so_intelligence serve --open
+   ```
+   Opens browser at `http://localhost:8000`
+
+### Configuration
+
+SO Intelligence uses environment variables (same `.env` file). Required and optional settings:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SO_API_TOKEN` | *(none)* | **Required** — Stack Exchange API token |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
+| `OLLAMA_MODEL` | `llama3.1:70b` | Main LLM for analysis |
+| `OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Embedding model for semantic search |
+| `OLLAMA_TEMPERATURE` | `0.0` | LLM temperature (0 = deterministic) |
+| `OLLAMA_TIMEOUT` | `120` | Request timeout in seconds |
+| `OLLAMA_MAX_RETRIES` | `3` | Retry attempts for failures |
+| `DATE_RANGE_DAYS` | `30` | Historical data window |
+| `CONFIDENCE_THRESHOLD` | `0.60` | Min. LLM confidence for findings |
+| `CACHE_TTL_DAYS` | `90` | Cache validity duration |
+| `LOG_LEVEL` | `INFO` | Logging verbosity |
+
+Example `.env` additions:
+```env
+SO_API_TOKEN=your_stack_exchange_token
+OLLAMA_MODEL=llama3.1:70b
+CONFIDENCE_THRESHOLD=0.60
+```
+
+### Pipeline Stages
+
+```
+Fetch → Cache → Validate → Analyze → Verify → Compare → Report
+```
+
+1. **Fetch** — Retrieve SO questions/answers by tag from Stack Exchange API
+2. **Cache** — Store in SQLite with TTL-based invalidation
+3. **Validate** — Data quality checks; halt on critical anomalies
+4. **Analyze** — LLM pattern detection (trends, pain points, solutions)
+5. **Verify** — Evidence-based confidence scoring
+6. **Compare** — Temporal analysis (before/after intervention date)
+7. **Report** — Generate PDF/DOCX with charts and findings
+
+### Advanced Usage
+
+**Run with temporal comparison (measure intervention impact):**
+```bash
+python -m so_intelligence run --intervention 2024-01-15
+```
+Analyzes before vs. after the specified date and generates comparative insights.
+
+**Force refresh (skip cache):**
+```bash
+python -m so_intelligence run --force-refresh
+```
+
+**Skip report generation:**
+```bash
+python -m so_intelligence run --no-report
+```
+
+**Custom port for dashboard:**
+```bash
+python -m so_intelligence serve --port 9000
+```
+
+### Troubleshooting
+
+**Ollama not responding:**
+```bash
+curl http://localhost:11434/api/tags
+# If fails, run: ollama serve
+```
+
+**Stack Overflow API token missing or invalid:**
+1. Get a free token at https://stackapps.com/apps/oauth/register
+2. Add to `.env`: `SO_API_TOKEN=your_token`
+3. Run: `python -m so_intelligence validate-config`
+
+**Rate limit hit (API error 429):**
+- Stack Exchange allows 300 requests/day without a token, 10,000/day with one
+- Cached data is reused for 90 days
+- Wait 24 hours for quota reset or use cached results
+
+**Models not found in Ollama:**
+```bash
+ollama pull llama3.1:70b
+ollama pull nomic-embed-text
+ollama list  # Verify
+```
+
+**Database locked error:**
+- Ensure only one process is accessing the database
+- Check for background Python processes: `ps aux | grep python`
+- Reset if corrupted: `rm so_intelligence.db && python -m so_intelligence run`
+
+### Output Files
+
+After running the pipeline, outputs are generated:
+
+| File | Description |
+|------|-------------|
+| `so_intelligence.db` | SQLite cache database |
+| `analysis_report_*.pdf` | PDF report with findings and charts |
+| `analysis_report_*.docx` | DOCX report (editable in Word) |
+| `validation_errors_*.json` | Data validation issues (if halted) |
+
+Reports are timestamped and include:
+- Executive summary
+- Pattern analysis by tag
+- Top solutions with evidence scores
+- Temporal comparison (if intervention date provided)
+- Charts and statistics
+
+---
+
 ## Security Notes
 
 1. **Never commit `.env`** — it contains your Confluence API token

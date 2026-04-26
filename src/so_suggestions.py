@@ -6,7 +6,7 @@ No deprecated LangChain imports — uses langchain_core.documents.Document only.
 """
 
 import logging
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple
 from langchain_core.documents import Document
 from .tag_linker import TagLinker
 

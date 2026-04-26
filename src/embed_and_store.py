@@ -7,7 +7,7 @@ and persists to ChromaDB.
 
 import os
 import logging
-from typing import List, Optional
+from typing import List
 from langchain_core.documents import Document
 from langchain_ollama import OllamaEmbeddings          # replaces langchain_community.embeddings.OllamaEmbeddings
 from langchain_chroma import Chroma                    # replaces langchain_community.vectorstores.Chroma

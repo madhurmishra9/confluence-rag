@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RAG Dashboard — Confluence</title>
+<style>
+:root {
+    --bg: #0f1117; --surface: #1c1f2e; --surface2: #252840;
+    --accent-blue: #4f8ef7; --accent-orange: #f7914f;
+    --accent-green: #4fc97f; --accent-purple: #a78bfa;
+    --text: #e2e8f0; --text-muted: #8892a4; --border: #2d3148;
+    --radius: 12px; --shadow: 0 4px 24px rgba(0,0,0,.4);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif;
+       font-size: 15px; line-height: 1.6; }
+header { background: linear-gradient(135deg,#1a1f3c 0%,#252840 100%);
+         border-bottom: 1px solid var(--border); padding: 28px 40px; }
+header h1 { font-size: 1.8rem; font-weight: 700; color: var(--accent-blue); }
+header p  { color: var(--text-muted); margin-top: 4px; }
+.nav-tabs { display: flex; gap: 4px; padding: 20px 40px 0; border-bottom: 1px solid var(--border);
+            background: var(--surface); }
+.nav-tab  { padding: 10px 24px; cursor: pointer; border-radius: 8px 8px 0 0;
+            color: var(--text-muted); font-weight: 500; border: 1px solid transparent;
+            border-bottom: none; transition: all .2s; }
+.nav-tab.active { background: var(--bg); color: var(--accent-blue);
+                  border-color: var(--border); }
+.tab-content { display: none; padding: 32px 40px; }
+.tab-content.active { display: block; }
+.stat-cards { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 28px; }
+.stat-card  { background: var(--surface); border: 1px solid var(--border);
+              border-radius: var(--radius); padding: 20px 28px; min-width: 160px;
+              flex: 1; box-shadow: var(--shadow); }
+.stat-icon  { font-size: 1.8rem; }
+.stat-value { font-size: 2rem; font-weight: 700; color: var(--accent-blue); }
+.stat-label { font-size: .82rem; color: var(--text-muted); margin-top: 4px; }
+.dashboard-section { background: var(--surface); border: 1px solid var(--border);
+                     border-radius: var(--radius); padding: 24px 28px;
+                     margin-bottom: 24px; box-shadow: var(--shadow); }
+.dashboard-section h2 { font-size: 1.1rem; font-weight: 600; color: var(--accent-purple);
+                         margin-bottom: 16px; border-bottom: 1px solid var(--border);
+                         padding-bottom: 10px; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.bar-chart { display: flex; flex-direction: column; gap: 8px; }
+.bar-row   { display: flex; align-items: center; gap: 10px; }
+.bar-label { width: 220px; font-size: .82rem; color: var(--text-muted);
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink:0; }
+.bar-track { flex: 1; background: var(--surface2); border-radius: 4px; height: 18px; overflow: hidden; }
+.bar-fill  { height: 100%; border-radius: 4px; transition: width .4s ease; }
+.bar-val   { width: 48px; text-align: right; font-size: .82rem; color: var(--text-muted); }
+.summary-box { background: var(--surface2); border-left: 3px solid var(--accent-blue);
+               border-radius: 6px; padding: 16px 20px; font-size: .92rem;
+               color: var(--text); line-height: 1.7; }
+.topic-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.topic-pill  { background: var(--surface2); border: 1px solid var(--accent-purple);
+               color: var(--accent-purple); padding: 4px 14px; border-radius: 20px;
+               font-size: .82rem; }
+.no-data { color: var(--text-muted); font-style: italic; font-size: .9rem; }
+.grounding-note { background: var(--surface2); border: 1px solid var(--accent-green);
+                  color: var(--accent-green); border-radius: 8px; padding: 10px 16px;
+                  font-size: .82rem; margin-bottom: 20px; }
+.log-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.log-table th { background: var(--surface2); color: var(--accent-blue);
+                padding: 8px 12px; text-align: left; }
+.log-table td { padding: 7px 12px; border-bottom: 1px solid var(--border); color: var(--text-muted); }
+.log-table tr:last-child td { border-bottom: none; }
+.so-question-link { color: var(--accent-blue); text-decoration: none; font-size: .88rem; }
+.so-question-link:hover { text-decoration: underline; }
+footer { text-align: center; padding: 28px; color: var(--text-muted); font-size: .8rem;
+         border-top: 1px solid var(--border); }
+@media (max-width: 768px) { .two-col { grid-template-columns: 1fr; }
+  .bar-label { width: 120px; } header { padding: 20px; } .tab-content { padding: 20px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>📊 RAG Analytics Dashboard</h1>
+  <p>Source: Confluence &nbsp;|&nbsp; Generated: 2026-03-30 08:38:26
+     &nbsp;|&nbsp; All data grounded in indexed documents — zero hallucination</p>
+</header>
+<nav class="nav-tabs"><div class="nav-tab active" onclick="showTab('conf-tab')">📄 Confluence</div><div class="nav-tab" onclick="showTab('log-tab')">🔍 Generation Log</div></nav>
+<div class="tab-content active" id="conf-tab"><div class='stat-cards'><div class='stat-card'>  <div class='stat-icon'>📄</div>  <div class='stat-value'>3</div>  <div class='stat-label'>Pages Indexed</div></div><div class='stat-card'>  <div class='stat-icon'>🧩</div>  <div class='stat-value'>536</div>  <div class='stat-label'>Total Chunks</div></div><div class='stat-card'>  <div class='stat-icon'>🗂️</div>  <div class='stat-value'>1</div>  <div class='stat-label'>Spaces Covered</div></div></div><div class='grounding-note'>✅ All data on this dashboard is derived exclusively from documents indexed in ChromaDB. The LLM summary and topics use only those documents as context — zero hallucination guaranteed.</div><section class='dashboard-section'>  <h2>Executive Summary (LLM-generated, grounded in indexed pages)</h2>  <div class='summary-box'>Insufficient data.</div></section><section class='dashboard-section'>  <h2>Key Topics Covered</h2>  <p class='no-data'>Insufficient data to extract topics.</p></section><div class='two-col'><section class='dashboard-section'>  <h2>Top Pages by Chunk Frequency</h2>  <div class='bar-chart'><div class='bar-row'>  <span class='bar-label' title='GitHub Actions documentation'>GitHub Actions documentation</span>  <div class='bar-track'>    <div class='bar-fill' style='width:100%;background:#4f8ef7'></div>  </div>  <span class='bar-val'>470</span></div>
+<div class='bar-row'>  <span class='bar-label' title='OpenID Connect'>OpenID Connect</span>  <div class='bar-track'>    <div class='bar-fill' style='width:91%;background:#4f8ef7'></div>  </div>  <span class='bar-val'>430</span></div>
+<div class='bar-row'>  <span class='bar-label' title='Overview'>Overview</span>  <div class='bar-track'>    <div class='bar-fill' style='width:24%;background:#4f8ef7'></div>  </div>  <span class='bar-val'>112</span></div>
+</div></section><section class='dashboard-section'>  <h2>Pages per Space</h2>  <div class='bar-chart'><div class='bar-row'>  <span class='bar-label' title='~5d6eb68c34b3d20d9777fb89'>~5d6eb68c34b3d20d9777fb89</span>  <div class='bar-track'>    <div class='bar-fill' style='width:100%;background:#a78bfa'></div>  </div>  <span class='bar-val'>3</span></div>
+</div></section></div><section class='dashboard-section'>  <h2>Recently Modified Pages</h2>  <table class='log-table'><tr><th>Page Title</th><th>Last Modified</th></tr><tr><td>GitHub Actions documentation</td><td>2026-03-04</td></tr><tr><td>OpenID Connect</td><td>2026-03-02</td></tr><tr><td>Overview</td><td>2026-03-02</td></tr></table></section></div><div class="tab-content" id="log-tab"><section class='dashboard-section'>  <h2>Dashboard Generation Log</h2>  <table class='log-table'><tr><th>Stage</th><th>Source</th><th>Status</th><th>Docs Used</th><th>Time (ms)</th><th>Note</th></tr><tr><td>Data generation</td><td>confluence</td><td style='color:#4fc97f'>✅ OK</td><td>536</td><td>5820</td><td>All LLM outputs are derived exclusively from stored Confluence documents. Temperature=0.0. No external knowledge used.</td></tr><tr><td>HTML render</td><td>render_dashboard()</td><td style='color:#4fc97f'>✅ Complete</td><td>—</td><td>—</td><td>Rendered at 2026-03-30 08:38:26</td></tr></table></section></div>
+<footer>
+  Generated by local Ollama LLM (llama3.1:8b) · Data from ChromaDB ·
+  Zero hallucination — LLM used only indexed documents as context
+</footer>
+<script>
+function showTab(id) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    event.target.classList.add('active');
+}
+</script>
+</body>
+</html>

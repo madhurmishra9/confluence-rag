@@ -5,7 +5,7 @@ LLM Generator Module - Uses Ollama to generate structured Jira ticket JSON
 import json
 import os
 import requests
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 
 def validate_story_points(points: int) -> bool:

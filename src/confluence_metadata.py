@@ -7,9 +7,9 @@ Persists metadata (page_id → version, modified time, fetch timestamp).
 import json
 import logging
 import os
-from typing import Dict, List, Set, Tuple, Optional
+from typing import Dict, List, Tuple
 from datetime import datetime, timezone
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 

@@ -16,8 +16,8 @@ import os
 import json
 import logging
 import time
-from typing import List, Dict, Any, Optional, Tuple
-from collections import Counter, defaultdict
+from typing import List, Dict, Any, Tuple
+from collections import Counter
 from datetime import datetime, timezone
 
 from langchain_core.documents import Document
