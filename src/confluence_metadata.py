@@ -7,7 +7,7 @@ Persists metadata (page_id → version, modified time, fetch timestamp).
 import json
 import logging
 import os
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 
