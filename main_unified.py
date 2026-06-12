@@ -74,16 +74,18 @@ def show_mode_menu() -> int:
     print("  2. Stack Overflow RAG   — Search Stack Overflow Q&A")
     print("  3. Unified Mode         — Search both + cross-linked suggestions")
     print("  4. Dashboard            — Generate on-demand HTML dashboards")
-    print("  5. Exit")
+    print("  5. Page Tools           — Sort/browse, create page from a code repo,")
+    print("                            move page(s) between spaces")
+    print("  6. Exit")
     print("-" * 70)
     while True:
         try:
-            choice = input("\nEnter your choice (1-5): ").strip()
-            if choice in ["1", "2", "3", "4", "5"]:
+            choice = input("\nEnter your choice (1-6): ").strip()
+            if choice in ["1", "2", "3", "4", "5", "6"]:
                 return int(choice)
-            print("Invalid choice. Enter 1–5.")
+            print("Invalid choice. Enter 1–6.")
         except KeyboardInterrupt:
-            return 5
+            return 6
 
 
 def show_dashboard_menu() -> int:
@@ -472,6 +474,138 @@ def run_dashboard_mode(conf_vectorstore=None, so_vectorstore=None):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+# ── Page Tools (sort/browse, create from repo, move pages) ───────────────────
+
+def run_page_tools_mode():
+    """Interactive Confluence page administration: sorting, creation, moving."""
+    from src.page_manager import ConfluencePageManager, PageManagerError
+    from src.page_creator import PageCreatorError, create_page_from_source
+
+    try:
+        manager = ConfluencePageManager()
+    except PageManagerError as exc:
+        print(f"\n  ✗ {exc}")
+        return
+
+    while True:
+        print("\n" + "-" * 70)
+        print("PAGE TOOLS:")
+        print("-" * 70)
+        print("  1. Browse & sort pages       — by title/created/modified/space")
+        print("  2. Create page from code repo — LLM-generated, grounded docs")
+        print("  3. Move a single page         — between spaces (either direction)")
+        print("  4. Move pages in bulk         — by space + optional title filter")
+        print("  5. Audit a page               — quality/structure/clarity score")
+        print("  6. Quality report for a space — rank all pages A-F for end users")
+        print("  7. Optimize a page            — improve readability, never lose data")
+        print("  8. Back")
+        choice = input("\nEnter your choice (1-8): ").strip()
+
+        try:
+            if choice == "1":
+                space = input("Space key (blank = all spaces): ").strip() or None
+                sort_by = input("Sort by [title/created/modified/space/id] (default modified): ").strip() or "modified"
+                order = input("Order [asc/desc] (default desc): ").strip().lower() or "desc"
+                pages = manager.list_pages(space_key=space, sort_by=sort_by,
+                                           descending=(order != "asc"), limit=100)
+                print(f"\n  {len(pages)} page(s) — sorted by {sort_by} ({order}):")
+                print(f"  {'ID':<12} {'SPACE':<8} {'MODIFIED':<22} TITLE")
+                for p in pages[:50]:
+                    print(f"  {p.page_id:<12} {p.space_key:<8} {p.modified[:19]:<22} {p.title[:60]}")
+
+            elif choice == "2":
+                source = input("Path to repo/folder/file to document: ").strip()
+                space = input("Target space key: ").strip()
+                title = input("Page title (blank = auto): ").strip() or None
+                focus = input("Optional focus (e.g. 'deployment flow'): ").strip()
+                publish = input("Publish to Confluence? [yes = publish / no = dry-run HTML] : ").strip().lower() in ("y", "yes")
+                print("\n  Scanning source and generating documentation with the local LLM...")
+                result = create_page_from_source(source, space, title=title,
+                                                 focus=focus, publish=publish)
+                if "url" in result:
+                    print(f"  ✓ Page created: {result['title']}\n    {result['url']}")
+                else:
+                    print(f"  ✓ Dry-run complete — review the HTML at: {result['local_file']}")
+
+            elif choice == "3":
+                page_id = input("Page ID to move: ").strip()
+                target = input("Target space key: ").strip()
+                info = manager.move_page(page_id, target)
+                print(f"  ✓ Moved '{info.title}' to {target} (now v{info.version})")
+                print("    Tip: run mode 1 once so the incremental sync re-indexes it.")
+
+            elif choice == "4":
+                source_space = input("Source space key: ").strip()
+                target = input("Target space key: ").strip()
+                title_filter = input("Only titles containing (blank = all): ").strip() or None
+                preview = manager.list_pages(space_key=source_space,
+                                             title_contains=title_filter,
+                                             sort_by="title", descending=False, limit=500)
+                print(f"\n  {len(preview)} page(s) will be moved {source_space} -> {target}:")
+                for p in preview[:20]:
+                    print(f"    - {p.title}")
+                if len(preview) > 20:
+                    print(f"    ... and {len(preview) - 20} more")
+                if input("  Proceed? (yes/no): ").strip().lower() in ("y", "yes"):
+                    result = manager.move_pages(target, source_space_key=source_space,
+                                                title_contains=title_filter)
+                    print(f"  ✓ {result.summary()}")
+                    for failure in result.failed:
+                        print(f"    ✗ {failure['page_id']}: {failure['error']}")
+                else:
+                    print("  Aborted.")
+
+            elif choice == "5":
+                from src.page_auditor import audit_page
+                page_id = input("Page ID to audit: ").strip()
+                use_llm = input("Use local LLM rubric? [Y/n]: ").strip().lower() != "n"
+                print("\n  Auditing...")
+                a = audit_page(page_id, use_llm=use_llm)
+                print(f"\n  '{a.title}' — {a.composite}/100 (grade {a.grade})")
+                print(f"  words={a.words} headings={a.headings} lists={a.lists} "
+                      f"tables={a.tables} code={a.code_blocks} links={a.links}")
+                print("  Heuristics: " + ", ".join(f"{k} {v:.0f}" for k, v in a.heuristic.items()))
+                if a.llm:
+                    print(f"  LLM: clarity {a.llm['clarity']}/10, completeness {a.llm['completeness']}/10, "
+                          f"structure {a.llm['structure']}/10, audience fit {a.llm['audience_fit']}/10")
+                for f in a.findings:
+                    print(f"    • {f}")
+
+            elif choice == "6":
+                from src.page_auditor import generate_quality_report
+                space = input("Space key: ").strip()
+                use_llm = input("Use local LLM rubric? [Y/n]: ").strip().lower() != "n"
+                limit = input("Max pages (default 100): ").strip()
+                print("\n  Auditing all pages — this can take a while with the LLM...")
+                path = generate_quality_report(space, use_llm=use_llm,
+                                               limit=int(limit) if limit else 100)
+                print(f"  ✓ Quality report written to: {path}")
+
+            elif choice == "7":
+                from src.page_auditor import optimize_page
+                page_id = input("Page ID to optimize: ").strip()
+                publish = input("Publish? [yes = new version in Confluence / no = local preview]: ")\
+                    .strip().lower() in ("y", "yes")
+                print("\n  Backing up original, then rewriting with the local LLM "
+                      "(all facts/code/links preserved)...")
+                r = optimize_page(page_id, publish=publish)
+                print(f"  ✓ Original backed up: {r.backup_path}")
+                if r.published:
+                    print(f"  ✓ Published as v{r.new_version} — previous version remains "
+                          "in Confluence page history (one-click restore).")
+                else:
+                    print(f"  ✓ Preview written to: {r.preview_path}")
+                print(f"  Words before/after: {r.words_before} → {r.words_after}")
+
+            elif choice == "8":
+                return
+        except (PageManagerError, PageCreatorError) as exc:
+            print(f"  ✗ {exc}")
+        except KeyboardInterrupt:
+            print()
+            return
+
+
 def main():
     print_banner()
     logger.info("[Main] Startup complete")
@@ -531,6 +665,9 @@ def main():
             run_dashboard_mode(conf_vs, so_vs)
 
         elif mode == 5:
+            run_page_tools_mode()
+
+        elif mode == 6:
             logger.info("[Main] Exiting")
             print("\nGoodbye!")
             sys.exit(0)
